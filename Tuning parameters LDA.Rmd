@@ -1,0 +1,107 @@
+---
+title: "LDA parameters tuning"
+author: "Carlijn Diederiks"
+date: "2023-06-15"
+output: html_document
+---
+
+Make sure the preprocessing file has run first, before running this code. 
+
+```{r}
+#install.packages("ldatuning")
+#install.packages("topicmodels")
+#install.packages("topicdoc")
+library(ldatuning)
+library(topicmodels)
+library(topicdoc)
+
+#set a seed to reproduce the results
+set.seed(920)
+```
+
+## Finding the optimal number of topics K 
+
+We use the lda tuning function for optimalization of the topics K.
+
+```{r}
+#Takes some time to run
+
+result <- FindTopicsNumber(
+  dtm,
+  topics = c(1:20 * 5, 120, 140, 160, 180),
+  metrics = c("Griffiths2004", "CaoJuan2009", "Arun2010"),
+  method = "Gibbs",
+  control = list(seed = 920),
+  mc.cores = 6L,
+  verbose = TRUE
+)
+```
+
+The result is plotted.
+
+```{r}
+plot <- FindTopicsNumber_plot(result)
+```
+
+## Tuning the alpha and beta 
+
+Tuning the optimal alpha and beta for the LDA topic model by comparing the coherence scores. The coherence scores are measured ten times and the mean is presented (because each model is different). 
+
+The optimal number K as optimized above, has to be set here first. 
+
+```{r}
+set.seed(920)
+
+# Assign the optimal number of topics
+topic.count <- 25
+
+# Define the range of values for alpha and beta
+alpha_values <- c(0.01, 0.05, 0.1, 0.5, 2, 5)
+beta_values <- c(0.01, 0.05, 0.1, 0.5, 5)
+
+# Create an empty data frame to store the results
+results <- data.frame(alpha = numeric(), beta = numeric(), mean_coherence = numeric())
+
+# Perform the grid search
+for (alpha in alpha_values) {
+  for (beta in beta_values) {
+    # Create a vector to store the coherence scores for each iteration
+    coherence_scores <- numeric()
+    
+    # Run the LDA model and coherence calculation 10 times
+    for (i in 1:10) {
+      # Build the LDA model
+      lda.model <- LDA(dtm, topic.count, method = "Gibbs", alpha = alpha, eta = beta)
+      
+      # Calculate the topic coherence with the top 20 tokens
+      diag <- topic_diagnostics(lda.model, dtm, top_n_tokens = 20)
+      
+      # Calculate the mean topic coherence
+      mean_coherence <- mean(diag$topic_coherence)
+      
+      # Add the mean coherence score to the coherence_scores vector
+      coherence_scores <- c(coherence_scores, mean_coherence)
+    }
+    
+    # Calculate the average of the coherence scores
+    mean_coherence_avg <- mean(coherence_scores)
+    
+    # Create a data frame with the current results
+    current_result <- data.frame(alpha = alpha, beta = beta, mean_coherence = mean_coherence_avg)
+    
+    # Append the current result to the overall results data frame
+    results <- rbind(results, current_result)
+  }
+}
+
+# Print the results
+print(results)
+
+```
+
+We save the results of the alpha en beta tuning as a csv file. 
+
+```{r}
+write.csv(results, file = "LDA_tuning.csv", row.names = FALSE)
+```
+

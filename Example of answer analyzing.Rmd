@@ -1,0 +1,188 @@
+---
+title: "Topic analyse"
+author: "Carlijn Diederiks"
+date: "2023-06-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import topic list and transform it into a list
+
+```{r}
+#install.packages("readxl")
+library(readxl)
+
+topiclist <- read_excel("Topiclijst.xlsx")
+topiclist <- as.list(topiclist)
+
+```
+
+## Import the question that has to be analyzed
+
+Import a dataset as df with a column containing the question "question_text" and a column with the answers "answer", that has to be analyzed. 
+
+```{r}
+df 
+```
+
+## Preprocessing this answers
+
+The preprocessing phase is the same as in the preprocessing rmd file. 
+
+```{r}
+#install.packages("cld2")
+#install.packages("dplyr)
+#install.packages("quanteda")
+library(cld2)
+library(dplyr)
+library(quanteda)
+
+# Delete missing data
+df <- na.omit(df)   
+
+# Remove anonymization
+remove_words_between_asterisks <- function(sentence) {
+  gsub("\\*([^*]+)\\*", "", sentence)
+}
+df$answer <- sapply(df$answer, remove_words_between_asterisks)
+
+# Filter on Dutch language
+
+df$language <- detect_language(df$answer)
+df$language[df$language == "af"] <- "nl"
+df$language[is.na(df$language)] <- "unknown"
+dfd <- df %>% filter(language == "nl")
+dfd <- subset(dfd, select = -language)
+
+# Create a corpus with unique document names
+doc_names <- paste0("doc_", seq_along(dfd$answer))
+corpus <- corpus(dfd$answer, docnames = doc_names)
+
+# Tokenization and remove punctuation, numbers, seperators and symbols
+tokens <- tokens(corpus, what = "word",
+                 remove_punct = TRUE,
+                 remove_numbers = TRUE,
+                 remove_separators = TRUE,
+                 remove_symbols = TRUE)
+
+# Lowercase
+tokens <- tokens_tolower(tokens)
+
+# Stopwords removal
+
+#install.packages("stopwords")
+library(stopwords)
+iso_st <- data.frame(stopwords::stopwords("nl", source = "stopwords-iso"))
+colnames(iso_st) <- "word"
+added_stopwords <- data.frame(word = c("nvt",
+                                       "idee",
+                                       "weet",
+                                       "soms",
+                                       "ten",
+                                       "qua",
+                                       "één"))
+stopwords <- rbind(iso_st, added_stopwords)
+tokens <- tokens_remove(tokens, c(stopwords$word))
+
+# Remove words less than 3 characters
+tokens <- tokens_remove(tokens, min_nchar = 3)
+
+# Name the tokenized dataframe "answers" 
+answers <- tokens
+```
+
+## Wordcount per topic
+
+Count the total number of words of each topic that occur in the answers. The top 7 most frequent words per topic are also saved in the dataframe.
+
+```{r}
+# Prepare the frames to store the data
+topic_counts <- rep(0, length(topiclist))
+topic_names <- names(topiclist)
+most_frequent_words <- vector("list", length(topiclist))
+
+# Count words for each topic and store most frequent words
+for (i in 1:length(topiclist)) {
+  topic_words <- topiclist[[i]]
+  topic_counts[i] <- sum(sapply(answers, function(answer) sum(answer %in% topic_words)))
+  most_frequent_words[[i]] <- names(sort(table(unlist(answers))[names(table(unlist(answers))) %in% topic_words], decreasing = TRUE))[1:7]
+}
+
+# Create a dataframe with topic names, counts, and most frequent words
+topic_df <- data.frame(Topic = topic_names, Count = topic_counts, Most_Frequent_Words = sapply(most_frequent_words, paste, collapse = ", "))
+
+# Print the dataframe
+print(topic_df)
+```
+
+## Print the sentences that contain the word "..." 
+
+```{r}
+filtered_answers <- df$answer[grep("salaris", df$answer, ignore.case = TRUE)]
+print(filtered_answers)
+```
+
+## Label each answer
+
+Put a label on each answer, based on the highest word frequency of words in a topics. 
+
+Topic presented: A single topic emerges as the most prominent, and the sentence contains mainly words from that topc.
+Multiple topics: Multiple topics in the topic list contain the highest frequency words.
+Unknown: None of the words are present in the topiclist
+
+```{r}
+topic_labels <- character(length(dfd$answer))
+
+# Iterate over each answer
+for (i in 1:length(dfd$answer)) {
+  answer <- tokens[[i]]
+  word_counts <- sapply(topiclist, function(topic_words) sum(answer %in% topic_words))
+  max_count <- max(word_counts)
+  
+  # Check if the answer has a clear topic association
+  if (max_count > 0) {
+    matching_topics <- names(word_counts[word_counts == max_count])
+    if (length(matching_topics) > 1) {
+      topic_labels[i] <- "Multiple Topics"
+    } else {
+      topic_labels[i] <- matching_topics
+    }
+  } else {
+    topic_labels[i] <- "Unknown"
+  }
+}
+
+# Add topic labels to the dataframe
+dfd$topic <- topic_labels
+
+# Print the dataframe with topic labels
+print(dfd)
+
+```
+
+## Barplot 
+
+Prints a barplot with the top 7 topics, based on the answers labeled. Ignoring the answers labeled as unknown and multiple topics. 
+
+```{r}
+# Filter only on the topics and ignoring the unknown and multiple topics labels
+no_topic <- data.frame(table(dfd$topic))
+no_topic_filter <- subset(no_topic, !(Var1 %in% c("Unknown", "Multiple Topics")))
+no_topic_filter <- no_topic_filter[order(no_topic_filter$Freq, decreasing = TRUE), ]
+no_topic_filter <- head(no_topic_filter, 7)
+
+#install.packages("ggplot2")
+library(ggplot2)
+
+# Print the barplot
+ggplot(no_topic_filter, aes(x = Var1, y = Freq)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  labs(x = "Topic", y = "Frequency", title = "Topic Frequencies") +
+  theme_minimal()
+```
+
+
+

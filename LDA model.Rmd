@@ -1,0 +1,56 @@
+---
+title: "LDA"
+author: "Carlijn Diederiks"
+date: "2023-05-25"
+output: html_document
+---
+
+Make sure the preprocessing file has run first, before running this code.
+
+## Running the LDA model with the optimized parameters
+
+The model with the created topics and the top 10 words printed. 
+
+```{r}
+#install.packages("topicmodels")
+#install.packages("textmineR")
+
+set.seed(920)
+library(topicmodels)
+library(textmineR)
+
+# Assign the optimal number of topics
+topic.count <- 25
+
+# Set the parameters
+a <- 0.05
+b <- 0.01
+
+# Run the LDA model
+lda.model <- LDA(dtm, topic.count, method = "Gibbs", alpha = a, eta = b)
+
+# Print the LDA model with the top 10 words per topic
+as.data.frame(terms(lda.model, 10))
+
+
+```
+
+## Calculating the coherence score 
+
+```{r}
+#install.packages("topicdoc")
+library(topicdoc)
+
+# Print the mean coherence score based on the top 5 words
+diag <- topic_diagnostics(lda.model, dtm, top_n_tokens = 5)
+print(mean(diag$topic_coherence))
+
+# Print the mean coherence score based on the top 10 words
+diag <- topic_diagnostics(lda.model, dtm, top_n_tokens = 10)
+print(mean(diag$topic_coherence))
+
+# Print the mean coherence score based on the top 20 words
+diag <- topic_diagnostics(lda.model, dtm, top_n_tokens = 20)
+print(mean(diag$topic_coherence))
+
+```

@@ -1,0 +1,196 @@
+---
+title: "Preprocessing"
+author: "Carlijn Diederiks"
+date: "2023-05-24"
+output: html_document
+---
+
+This document defines the pre-processing phase and put the data in a tidy format. 
+
+## Loading the dataset
+
+Import the dataset as df
+
+```{r}
+df 
+```
+
+## Delete missing data
+
+The rows are deleted that do not contain any form of text and the number of deleted rows has been shown.  
+
+```{r}
+# Count the number of missing answers
+sum(is.na(df$answer))
+
+# Delete the data where there is missing answers
+df <- na.omit(df)   
+```
+
+## Remove anonymization
+
+We remove the words between asteriks (*), that are used in anonymization of the dataset.
+
+```{r}
+# Function to remove words between asterisks in the "answer" column
+remove_words_between_asterisks <- function(sentence) {
+  gsub("\\*([^*]+)\\*", "", sentence)
+}
+
+# Apply the function to the "answer" column
+df$answer <- sapply(df$answer, remove_words_between_asterisks)
+```
+
+## Filter on Dutch language
+
+The language Afrikaans is also filtered as Dutch sentences, while these are mostly shorter or not good formulated Dutch sentences. The language which could not be recognized through the algorithm gets the label "unknown". 
+
+```{r}
+#install.packages("cld2")
+#install.packages("dplyr)
+library(cld2)
+library(dplyr)
+
+df$language <- detect_language(df$answer)
+
+df$language[df$language == "af"] <- "nl"
+df$language[is.na(df$language)] <- "unknown"
+
+# Table that shows the count of sentences of a language
+df %>%
+  count(language, sort = T)
+```
+
+For now, we select only the Dutch sentences. 
+
+```{r}
+dfd <- df %>% filter(language == "nl")
+```
+
+## Tokenization and remove punctuation, numbers, seperators and symbols
+
+We tokenize the sentences and also remove the punctuation, numbers, seperators and symbols.
+
+```{r}
+#install.packages("quanteda")
+library(quanteda)
+
+tokens <- tokens(dfd$answer, what = "word",
+                 remove_punct = TRUE,
+                 remove_numbers = TRUE,
+                 remove_separators = TRUE,
+                 remove_symbols = TRUE
+                 )
+```
+
+## Lowercase
+
+```{r}
+#Transform the characters from uppercase to lowercase
+tokens <- tokens_tolower(tokens)
+```
+
+## Stopwords removal
+
+First we generate a list with stopwords
+
+```{r}
+#install.packages("stopwords")
+library(stopwords)
+
+#We use the iso stopwords list
+iso_st <- data.frame(stopwords::stopwords("nl", source = "stopwords-iso"))
+colnames(iso_st) <- "word"
+
+#We add some stopwords that occur in our dataset and are not yet included
+added_stopwords <- data.frame(word = c("nvt",
+                                       "idee",
+                                       "weet",
+                                       "soms",
+                                       "ten",
+                                       "qua",
+                                       "één"))
+stopwords <- rbind(iso_st, added_stopwords)
+```
+
+The next step is to remove these stopwords from our dataset
+
+```{r}
+tokens <- tokens_remove(tokens, c(stopwords$word))
+```
+
+## Remove words less than 3 characters
+
+We also remove words that have less than 3 characters
+
+```{r}
+tokens <- tokens_remove(tokens, min_nchar = 3)
+```
+
+## Convert to input for the LDA model
+
+The LDA model use a document-term matrix as the input for the model, so we convert the data to this matrix and we filter on words that are infrequent
+
+```{r}
+dfm <- dfm(tokens)
+print(dfm)
+
+#Words are filtered that appear less than 0.1% of all sentences and more than 99%
+dfm <- dfm_trim(dfm, 
+                min_docfreq = 0.001, 
+                max_docfreq = 0.99, 
+                docfreq_type = "prop", 
+                verbose = TRUE) 
+```
+
+Remove the rows with all zeroes, containing no information 
+
+```{r}
+raw.sum = apply(dfm, 1 , FUN=sum)
+dfm = dfm[raw.sum != 0, ]
+```
+
+Convert this to a tm format, needed as input 
+
+```{r}
+#install.packages("tm")
+library(tm)
+
+dtm <- convert(dfm, to = "tm")
+```
+
+## Convert to input for the BTM model
+
+The BTM model needs the data to be in a tokenized data frame, so the tokens dataset created by quanteda needed to be converted. 
+
+```{r}
+#install.packages("dplyr")
+#install.packages("tidytext")
+library(dplyr)
+library(tidytext)
+
+tokenized <- data.frame(
+  id = seq_along(tokens),
+  text = sapply(tokens, paste, collapse = " "),
+  row.names = NULL
+)
+
+tokenized <- tokenized %>%
+  unnest_tokens(words, text)
+```
+
+Use the same infrequent words filter as used to create the dfm matrix (words are filtered that appear less than 0.1% of all sentences and more than 99%). 
+
+```{r}
+column_names_df <- data.frame(column_names = colnames(dfm))
+tokenized <- tokenized[tokenized$words %in% column_names_df$column_names, ]
+```
+
+Create a csv file to use this data for the Python BTM model
+
+```{r}
+# Combine words for each id into a single row
+df_combined <- aggregate(words ~ id, data = tokenized, FUN = paste, collapse = " ")
+write.csv(df_combined, file = "python_data.csv", row.names = FALSE)
+```
+
