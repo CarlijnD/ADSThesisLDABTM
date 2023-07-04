@@ -2,7 +2,7 @@
 
 ## Description
 
-This Github is created to support a thesis project of Applied Data Science. 
+This Github is created to support a thesis project of Applied Data Science, written by Carlijn Diederiks. 
 
 The research focused on exploring the effectiveness of topic modeling methods, specifically LDA and BTM. The research aim was to answer the following question: “Are the topic modeling methods LDA and BTM effective to use to gain insight in the topics present in unstructured  answers to open ended questions in employee engagement surveys?” Firstly, the data is preprocessed to create a clean and tidy dataset that served as an input for the topic modeling methods. Then, the parameters are optimized. The optimization of parameters played a crucial role in achieving meaningful results. Theoretically grounded methods helped in making a choice in the best number of topics fitting the data. The parameters that put weights on how the documents are composed and how the topics are composed, were tuned through a grid search by comparing the coherence scores. The two models with optimized parameters are performed by using developed packages in Python and R. The models are evaluated on their coherence scores, on the possibility of human interpretation of the topics and on eyeballing to assess the distinctiveness and specificity of the topics. The overall performance of the BTM model was way better than the LDA model.  
 
